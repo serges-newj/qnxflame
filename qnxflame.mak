@@ -1,0 +1,1 @@
+qnxflame.scr : qnxflame.cpp ; cl /nologo qnxflame.cpp /Feqnxflame.scr /MD /D_WIN32_WINNT=0x0500 /link scrnsave.lib gdi32.lib user32.lib advapi32.lib kernel32.lib /SUBSYSTEM:WINDOWS
