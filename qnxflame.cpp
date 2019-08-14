@@ -85,111 +85,6 @@ static short halfrandom (int mv)
   return (r % mv);
 }
 
-static COLORREF HSV(int byHue, int bySaturation, int byValue) 
-      {
-        // HSV contains values scaled as in the color wheel:
-        // that is, all from 0 to 255. 
-
-        // for ( this code to work, HSV.Hue needs
-        // to be scaled from 0 to 360 (it//s the angle of the selected
-        // point within the circle). HSV.Saturation and HSV.value must be 
-        // scaled to be between 0 and 1.
-
-        double h;
-        double s;
-        double v;
-
-        double r = 0;
-        double g = 0;
-        double b = 0;
-
-        // Scale Hue to be between 0 and 360. Saturation
-        // and value scale to be between 0 and 1.
-        h = ((double) byHue / 255 * 360);
-        while (h>=360){h-=360;}
-        s = (double) bySaturation / 255;
-        v = (double) byValue / 255;
-
-        if ( s == 0 ) 
-        {
-          // If s is 0, all colors are the same.
-          // This is some flavor of gray.
-          r = v;
-          g = v;
-          b = v;
-        } 
-        else 
-        {
-          double p;
-          double q;
-          double t;
-
-          double fractionalSector;
-          int sectorNumber;
-          double sectorPos;
-
-          // The color wheel consists of 6 sectors.
-          // Figure out which sector you//re in.
-          sectorPos = h / 60;
-          sectorNumber = (int)(floor(sectorPos));
-
-          // get the fractional part of the sector.
-          // That is, how many degrees into the sector
-          // are you?
-          fractionalSector = sectorPos - sectorNumber;
-
-          // Calculate values for the three axes
-          // of the color. 
-          p = v * (1 - s);
-          q = v * (1 - (s * fractionalSector));
-          t = v * (1 - (s * (1 - fractionalSector)));
-
-          // Assign the fractional colors to r, g, and b
-          // based on the sector the angle is in.
-          switch (sectorNumber) 
-          {
-            case 0:
-              r = v;
-              g = t;
-              b = p;
-              break;
-
-            case 1:
-              r = q;
-              g = v;
-              b = p;
-              break;
-
-            case 2:
-              r = p;
-              g = v;
-              b = t;
-              break;
-
-            case 3:
-              r = p;
-              g = q;
-              b = v;
-              break;
-
-            case 4:
-              r = t;
-              g = p;
-              b = v;
-              break;
-
-            case 5:
-              r = v;
-              g = p;
-              b = q;
-              break;
-          }
-        }
-        // return an RGB structure, with values scaled
-        // to be between 0 and 255.
-        return RGB((int)(r * 255), (int)(g * 255), (int)(b * 255));
-      }
-
 static void DrawPixelArray( PPIXEL points, int num_pixels)
 {
   int i;
@@ -212,15 +107,38 @@ static void init_flame ( )
   int saturation = 255;
   int value = 255;
   if (opt_ncolors <= 0) opt_ncolors = 128;
-
   colors = (COLORREF *) malloc ((opt_ncolors+1) * sizeof (*colors));
-  for (num_colors = 0; num_colors < opt_ncolors; num_colors++)
-  {
-    colors [num_colors] = HSV((0xffff*num_colors)/opt_ncolors, saturation, value );
-  }
 
   background = opt_background;
-  cur_color = halfrandom (num_colors);
+}
+
+static void generate_colors ( )
+{
+  int i;
+  double st, c1[3], c2[3], c3[3];
+  double pi = 3.14159265359;
+  st = pi * 2 / opt_ncolors;
+
+  for (i=0;i<3;i++)
+  {
+    c1[i]  = (double)(rand() & 255)+30;
+    c2[i] = ((double)(rand()) / RAND_MAX * 2 * pi);
+  }
+
+  for (num_colors = 0; num_colors < opt_ncolors; num_colors++)
+  {
+    for (i=0;i<3;i++)
+    {
+      c2[i] += st;
+      c1[i] += sin(c2[i]) * 3;
+      c3[i] = c1[i];
+      if( c3[i] < 0 ) c3[i] = 0;
+      if( c3[i] > 255 ) c3[i] = 255;
+    }
+    colors [num_colors] = RGB((int)c3[0], (int)c3[1], (int)c3[2]);
+  }
+
+  cur_color = opt_ncolors / 2; //halfrandom (num_colors);
 }
 
 static int recurse ( register double x, register double y, register int l, register int c )
@@ -335,6 +253,7 @@ static void flame ()
   
   num_pixels = 0;
   total_points = 0;
+  generate_colors();
 //  cccc = RGB(100,100,100);
   (void) recurse (0.0, 0.0, 0, 0);
   DrawPixelArray( pixels, num_pixels);
