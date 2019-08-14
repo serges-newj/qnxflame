@@ -67,6 +67,8 @@ int opt_ncolors = 128;
 int opt_delay = 2000;
 COLORREF background, opt_background;
 
+int maxc, minc;
+
 static short halfrandom (int mv)
 {
   static short lasthalf = 0;
@@ -225,7 +227,7 @@ static void init_flame ( )
 
 static int recurse ( register double x, register double y, register int l, register int c )
 {
-  int i;
+  int i, _c;
   double nx, ny;
 
   if (l == max_iterations)
@@ -243,16 +245,22 @@ static int recurse ( register double x, register double y, register int l, regis
     }
     else
     {
+      while (x < bounds.left) x = x + (bounds.right - bounds.left);
+      while (x > bounds.right) x = x - (bounds.right - bounds.left);
+      while (y < bounds.top) y = y + (bounds.bottom - bounds.top);
+      while (y > bounds.bottom) y = y - (bounds.bottom - bounds.top);
       if (x > bounds.left && x < bounds.right && y > bounds.top && y < bounds.bottom)
       {
         pixels[num_pixels].x = (short) ((x - bounds.left) / (bounds.right - bounds.left) * width);
         pixels[num_pixels].y = (short) ((y - bounds.top) / (bounds.bottom - bounds.top) * height);
-        if (cur_color + c < 0)
-          pixels[num_pixels].c = colors[cur_color + c + opt_ncolors];
-        else if (cur_color + c >= opt_ncolors)
-          pixels[num_pixels].c = colors[cur_color + c - opt_ncolors];
-        else
-          pixels[num_pixels].c = colors[cur_color + c];
+        minc = minc > c ? c : minc;
+        maxc = maxc < c ? c : maxc;
+        _c = cur_color + c;
+        if (_c < 0)
+          _c += opt_ncolors;
+        else if (_c >= opt_ncolors)
+          _c -= opt_ncolors;
+        pixels[num_pixels].c = colors[_c];
 
 //pixels[num_pixels].c = cccc;
 
@@ -273,8 +281,12 @@ static int recurse ( register double x, register double y, register int l, regis
       ny = f[1][0][i] * x + f[1][1][i] * y + f[1][2][i];
       if (i < anum)
       {
-        nx = sin(nx);
-        ny = sin(ny);
+        f[0][2][i] = -sin(ny*ny);
+        f[1][2][i] = -sin(nx*nx);
+/*
+        nx = sin(nx*nx);
+        ny = sin(ny*ny*ny);
+*/
       }
       if (!recurse (nx, ny, l + 1, c + (i-1)*(l<max_iterations/3?1:l<max_iterations/3*2?2:l+6-max_iterations<3?3:l+6-max_iterations)))
         return 0;
@@ -325,6 +337,8 @@ static void flame ()
   max_iterations = 4;
   num_pixels = 0;
   total_points = 0;
+  minc = 0;
+  maxc = 0;
   (void) recurse (0.0, 0.0, 0, 0);
   test_bounds = -1;
   bounds.left = bounds.left - (bounds.right - bounds.left) * 0.2;
@@ -338,6 +352,32 @@ static void flame ()
 //  cccc = RGB(100,100,100);
   (void) recurse (0.0, 0.0, 0, 0);
   DrawPixelArray( pixels, num_pixels);
+
+/*
+  {
+    HBRUSH hbr; RECT rc; int width, c, _c;
+
+    width = (screen.cx * 2) / (maxc-minc+1);
+    rc.top = 0;
+    rc.bottom = 20;
+    rc.left = 0;
+    rc.right = rc.left + width;
+    for (c= minc; c <= maxc; c++)
+    {
+      _c = cur_color + c;
+      if (_c < 0)
+        _c += opt_ncolors;
+      else if (_c >= opt_ncolors)
+        _c -= opt_ncolors;
+      hbr = CreateSolidBrush( colors [_c] );
+      FillRect( scr, &rc, hbr );
+      rc.left = rc.right;
+      rc.right += width;
+      DeleteObject( hbr );
+    }
+  }
+*/
+
 /*
   max_iterations = 4;
   num_pixels = 0;
