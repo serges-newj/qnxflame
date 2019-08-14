@@ -16,6 +16,21 @@ LONG    lSpeed = DEFVEL;          // redraw speed variable
   
 extern HINSTANCE hMainInstance;   // screen saver instance handle  
  
+typedef struct tagRECT_DBL
+{ 
+    double left;
+    double top;
+    double right;
+    double bottom;
+} RECT_DBL;
+
+typedef struct tagPIXEL
+{ 
+    LONG x;
+    LONG y;
+    COLORREF c;
+} PIXEL, *PPIXEL;
+
 //CHAR   szAppName[80];             // .ini section name             
 CHAR   szTemp[20];                // temporary array of characters  
 CHAR   szRedrawSpeed[ ] = "Redraw Speed";   // .ini speed entry 
@@ -24,27 +39,33 @@ CHAR   szIniFile[MAXFILELEN];     // .ini or registry file name
 HDC scr;
 
 static double f[2][3][MAXLEV];  /* three non-homogeneous transforms */
-static int max_total;
+static int max_fractals;
+static int max_iterations;
 static int max_levels;
 static int max_points;
 static int cur_level;
 static int snum;
 static int anum;
-static int num_points;
+static int num_pixels;
 static int total_points;
-static int pixcol;
-static int npixels;
-static COLORREF *pixels;
-static POINT points [POINT_BUFFER_SIZE];
+static int cur_color;
+static int num_colors;
+static COLORREF *colors;
+static PIXEL pixels [POINT_BUFFER_SIZE];
 SIZE screen;
+RECT_DBL bounds;
+static int test_bounds;
+COLORREF cccc;
 
-static int delay2 = 2000;
+static int delay2;
 static int width, height;
 
-int opt_points = 10000;
+int opt_points = 50000;
 int opt_iterations = 25;
+int opt_fractals = 5;
 int opt_ncolors = 128;
-COLORREF foreground, background, opt_foreground, opt_background;
+int opt_delay = 2000;
+COLORREF background, opt_background;
 
 static short halfrandom (int mv)
 {
@@ -169,87 +190,96 @@ static COLORREF HSV(int byHue, int bySaturation, int byValue)
         return RGB((int)(r * 255), (int)(g * 255), (int)(b * 255));
       }
 
-static void DrawPixelArray( PPOINT points, int num_points)
+static void DrawPixelArray( PPIXEL points, int num_pixels)
 {
   int i;
-  for ( i = 0; i < num_points; i++ )
-    SetPixel( scr, points[i].x, points[i].y, pixels [pixcol] );
+  for ( i = 0; i < num_pixels; i++ )
+    SetPixel( scr, pixels[i].x, pixels[i].y, pixels[i].c );
 }
 
 static void init_flame ( )
 {
-  max_points = opt_iterations;
-  if (max_points <= 0) max_points = 100;
+  max_iterations = opt_iterations;
+  max_fractals = opt_fractals;
+  if (max_iterations <= 0) max_iterations = 100;
 
-  max_levels = max_points;
+  max_points = opt_points;
+  if (max_points <= 0) max_points = 10000;
 
-  max_total = opt_points;
-  if (max_total <= 0) max_total = 10000;
+  delay2 = opt_delay;
 
-  if (delay2 < 0) delay2 = 0;
 
-    {
-      int i = opt_ncolors;
-      int saturation = 255;
-      int value = 255;
-      COLORREF color;
-      if (i <= 0) i = 128;
+  int saturation = 255;
+  int value = 255;
+  if (opt_ncolors <= 0) opt_ncolors = 128;
 
-      pixels = (COLORREF *) malloc ((i+1) * sizeof (*pixels));
-      for (npixels = 0; npixels < i; npixels++)
+  colors = (COLORREF *) malloc ((opt_ncolors+1) * sizeof (*colors));
+  for (num_colors = 0; num_colors < opt_ncolors; num_colors++)
   {
-   color =  HSV((0xffff*npixels)/i, saturation, value );
-    pixels [npixels] = color;
+    colors [num_colors] = HSV((0xffff*num_colors)/opt_ncolors, saturation, value );
   }
-    }
 
-  foreground = opt_foreground;
   background = opt_background;
-
-    {
-      pixcol = halfrandom (npixels);
-      foreground = (pixels [pixcol]);
-    }
+  cur_color = halfrandom (num_colors);
 }
 
-static int recurse ( register double x,register double  y, register int l )
+static int recurse ( register double x, register double y, register int l, register int c )
 {
-  int xp, yp, i;
+  int i;
   double nx, ny;
 
-  if (l == max_levels)
-    {
-      total_points++;
-      if (total_points > max_total) /* how long each fractal runs */
-  return 0;
+  if (l == max_iterations)
+  {
+    total_points++;
+    if (max_points > 0 && total_points > max_points) /* how long each fractal runs */
+      return 0;
 
-      if (x > -1.0 && x < 1.0 && y > -1.0 && y < 1.0)
-  {
-    xp = points[num_points].x = (short) ((width / 2) * (x + 1.0));
-    yp = points[num_points].y = (short) ((height / 2) * (y + 1.0));
-    num_points++;
-    if (num_points >= POINT_BUFFER_SIZE)
-      {
-        DrawPixelArray (points, num_points);
-        num_points = 0;
-      }
-  }
-    }
-  else
+    if (test_bounds >= 0)
     {
-      for (i = 0; i < snum; i++)
+      if (x < bounds.left) bounds.left = x;
+      if (x > bounds.right) bounds.right = x;
+      if (y < bounds.top) bounds.top = y;
+      if (y > bounds.bottom) bounds.bottom = y;
+    }
+    else
+    {
+      if (x > bounds.left && x < bounds.right && y > bounds.top && y < bounds.bottom)
+      {
+        pixels[num_pixels].x = (short) ((x - bounds.left) / (bounds.right - bounds.left) * width);
+        pixels[num_pixels].y = (short) ((y - bounds.top) / (bounds.bottom - bounds.top) * height);
+        if (cur_color + c < 0)
+          pixels[num_pixels].c = colors[cur_color + c + opt_ncolors];
+        else if (cur_color + c >= opt_ncolors)
+          pixels[num_pixels].c = colors[cur_color + c - opt_ncolors];
+        else
+          pixels[num_pixels].c = colors[cur_color + c];
+
+//pixels[num_pixels].c = cccc;
+
+        num_pixels++;
+        if (num_pixels >= POINT_BUFFER_SIZE)
+        {
+          DrawPixelArray (pixels, num_pixels);
+          num_pixels = 0;
+        }
+      }
+    }
+  }
+  else
   {
-    nx = f[0][0][i] * x + f[0][1][i] * y + f[0][2][i];
-    ny = f[1][0][i] * x + f[1][1][i] * y + f[1][2][i];
-    if (i < anum)
+    for (i = 0; i < snum; i++)
+    {
+      nx = f[0][0][i] * x + f[0][1][i] * y + f[0][2][i];
+      ny = f[1][0][i] * x + f[1][1][i] * y + f[1][2][i];
+      if (i < anum)
       {
         nx = sin(nx);
         ny = sin(ny);
       }
-    if (!recurse (nx, ny, l + 1))
-      return 0;
-  }
+      if (!recurse (nx, ny, l + 1, c + (i-1)*(l<max_iterations/3?1:l<max_iterations/3*2?2:l+6-max_iterations<3?3:l+6-max_iterations)))
+        return 0;
     }
+  }
   return 1;
 }
 
@@ -260,42 +290,73 @@ static void flame ()
   static int alt = 0;
   static RECT   rc;
 
-  if (!(cur_level++ % max_levels))
-    {
-      if (delay2) Sleep (delay2);
+  if (!(cur_level % max_fractals))
+  {
       rc.left = 0; rc.top = 0; rc.right = width; rc.bottom = height;
       FillRect (scr, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH)); 
-      alt = !alt;
-    }
-  else
-    {
-      if (npixels > 2)
-  {
-    if (--pixcol < 0)
-      pixcol = npixels - 1;
   }
-    }
+
+  if (num_colors > 2)
+  {
+//    if ((--cur_color) < 0)
+    if ((cur_color-=7) < 0)
+      cur_color = num_colors - 1;
+  }
 
   /* number of functions */
-  snum = 2 + (cur_level % (MAXLEV - 1));
+  snum = 2 + (cur_level++ % (MAXLEV - 1));
 
   /* how many of them are of alternate form */
+  alt = !alt;
   if (alt)
     anum = 0;
   else
-    anum = halfrandom (snum) + 2;
+    anum = halfrandom (snum);
 
   /* 6 coefs per function */
   for (k = 0; k < snum; k++)
-    {
-      for (i = 0; i < 2; i++)
-  for (j = 0; j < 3; j++)
-    f[i][j][k] = ((double) (rand() & 1023) / 512.0 - 1.0);
-    }
-  num_points = 0;
+    for (i = 0; i < 2; i++)
+      for (j = 0; j < 3; j++)
+        f[i][j][k] = ((double) (rand() & 1023) / 512.0 - 1.0);
+
+  /* получим примерные границы фрактала */
+  bounds.left = 0; bounds.top = 0; bounds.right = 0, bounds.bottom = 0;
+  test_bounds = 1;
+  max_iterations = 4;
+  num_pixels = 0;
   total_points = 0;
-  (void) recurse (0.0, 0.0, 0);
-  DrawPixelArray( points, num_points);
+  (void) recurse (0.0, 0.0, 0, 0);
+  test_bounds = -1;
+  bounds.left = bounds.left - (bounds.right - bounds.left) * 0.2;
+  bounds.right = bounds.right + (bounds.right - bounds.left) * 0.2;
+  bounds.top = bounds.top - (bounds.bottom - bounds.top) * 0.2;
+  bounds.bottom = bounds.bottom + (bounds.bottom - bounds.top) * 0.2;
+  max_iterations = opt_iterations;
+  
+  num_pixels = 0;
+  total_points = 0;
+//  cccc = RGB(100,100,100);
+  (void) recurse (0.0, 0.0, 0, 0);
+  DrawPixelArray( pixels, num_pixels);
+/*
+  max_iterations = 4;
+  num_pixels = 0;
+  total_points = 0;
+  cccc = RGB(255,0,0);
+  (void) recurse (0.0, 0.0, 0, 0);
+  DrawPixelArray( pixels, num_pixels);
+  max_iterations = opt_iterations;
+*/
+
+  if (!(cur_level % max_fractals))
+  {
+      if (delay2)
+      {
+        Sleep (delay2);
+        MSG msg;
+        while (PeekMessage( &msg, NULL, WM_TIMER, WM_TIMER, PM_REMOVE ));
+      }
+  }
 }
 
 LRESULT WINAPI ScreenSaverProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -333,7 +394,7 @@ LRESULT WINAPI ScreenSaverProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM l
             // Retrieve any redraw speed data from the registry.  
             //lSpeed = GetPrivateProfileInt(szAppName, szRedrawSpeed, 
             //                              DEFVEL, szIniFile); 
-            lSpeed = 10;
+            lSpeed = 50;
  
             // Set a timer for the screen saver window using the 
             // redraw rate stored in Regedit.ini. 
@@ -383,10 +444,34 @@ LRESULT WINAPI ScreenSaverProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM l
               {
                 KillTimer(hwnd, uTimer);
                 uTimer = 0;
+                MSG msg;
+                while (PeekMessage( &msg, NULL, WM_TIMER, WM_TIMER, PM_REMOVE ));
               }
               else
               {
                 uTimer = SetTimer(hwnd, 1, lSpeed * 10, NULL);
+                max_fractals = opt_fractals;
+                max_points = opt_points;
+                delay2 = opt_delay;
+              }
+              return 0; 
+            }
+
+            if (wParam == VK_RIGHT)
+            {
+              if (uTimer)
+              {
+                KillTimer(hwnd, uTimer);
+                uTimer = 0;
+                MSG msg;
+                while (PeekMessage( &msg, NULL, WM_TIMER, WM_TIMER, PM_REMOVE ));
+              }
+              else
+              {
+                max_fractals = 1;
+                max_points = 250000;
+                delay2 = 0;
+                PostMessage(hwnd, WM_TIMER, 0, 0);
               }
               return 0; 
             }
